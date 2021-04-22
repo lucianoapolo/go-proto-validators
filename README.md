@@ -1,6 +1,6 @@
 # Golang ProtoBuf Validator Compiler
 
-[![Travis Build](https://travis-ci.org/mwitkow/go-proto-validators.svg)](https://travis-ci.org/mwitkow/go-proto-validators)
+[![Travis Build](https://travis-ci.org/lucianoapolo/go-proto-validators.svg)](https://travis-ci.org/lucianoapolo/go-proto-validators)
 [![Apache 2.0 License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 A `protoc` plugin that generates `Validate() error` functions on Go proto `struct`s based on field options inside `.proto`
@@ -26,7 +26,7 @@ Let's take the following `proto3` snippet:
 ```proto
 syntax = "proto3";
 package validator.examples;
-import "github.com/mwitkow/go-proto-validators/validator.proto";
+import "github.com/lucianoapolo/go-proto-validators/validator.proto";
 
 message InnerMessage {
   // some_integer can only be in range (0, 100).
@@ -95,7 +95,7 @@ export PATH=${PATH}:${GOPATH}/bin
 Then, do the usual
 
 ```sh
-go get github.com/mwitkow/go-proto-validators/protoc-gen-govalidators
+go get github.com/lucianoapolo/go-proto-validators/protoc-gen-govalidators
 ```
 
 Your `protoc` builds probably look very simple like:

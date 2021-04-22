@@ -61,7 +61,7 @@ import (
 	"github.com/gogo/protobuf/protoc-gen-gogo/generator"
 	"github.com/gogo/protobuf/vanity"
 
-	validator "github.com/mwitkow/go-proto-validators"
+	validator "github.com/lucianoapolo/go-proto-validators"
 )
 
 const uuidPattern = "^([a-fA-F0-9]{8}-" +
@@ -76,6 +76,9 @@ type plugin struct {
 	regexPkg      generator.Single
 	fmtPkg        generator.Single
 	validatorPkg  generator.Single
+	codesPkg      generator.Single
+	statusPkg     generator.Single
+	errdetailsPkg generator.Single
 	useGogoImport bool
 }
 
@@ -98,7 +101,10 @@ func (p *plugin) Generate(file *generator.FileDescriptor) {
 	p.PluginImports = generator.NewPluginImports(p.Generator)
 	p.regexPkg = p.NewImport("regexp")
 	p.fmtPkg = p.NewImport("fmt")
-	p.validatorPkg = p.NewImport("github.com/mwitkow/go-proto-validators")
+	p.validatorPkg = p.NewImport("github.com/lucianoapolo/go-proto-validators")
+	p.codesPkg = p.NewImport("google.golang.org/grpc/codes")
+	p.statusPkg = p.NewImport("google.golang.org/grpc/status")
+	p.errdetailsPkg = p.NewImport("google.golang.org/genproto/googleapis/rpc/errdetails")
 
 	for _, msg := range file.Messages() {
 		if msg.DescriptorProto.GetOptions().GetMapEntry() {
@@ -207,6 +213,7 @@ func (p *plugin) generateProto2Message(file *generator.FileDescriptor, message *
 
 	p.P(`func (this *`, ccTypeName, `) Validate() error {`)
 	p.In()
+	p.P(`fieldsViolations := []*`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{}`)
 	for _, field := range message.Field {
 		fieldName := p.GetFieldName(message, field)
 		fieldValidator := getFieldValidatorIfAny(field)
@@ -263,7 +270,9 @@ func (p *plugin) generateProto2Message(file *generator.FileDescriptor, message *
 			}
 			p.P(`if err := `, p.validatorPkg.Use(), `.CallValidatorIfExists(&(`, variableName, `)); err != nil {`)
 			p.In()
-			p.P(`return `, p.validatorPkg.Use(), `.FieldError("`, fieldName, `", err)`)
+			p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{ Field: "`, fieldName, `", Description: err.Error()}`)
+			p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
+			//p.P(`return `, p.validatorPkg.Use(), `.FieldError("`, fieldName, `", err)`)
 			p.Out()
 			p.P(`}`)
 		}
@@ -280,7 +289,17 @@ func (p *plugin) generateProto2Message(file *generator.FileDescriptor, message *
 			p.P(`}`)
 		}
 	}
+	p.P(`if len(fieldsViolations) > 0 {`)
+	p.In()
+	p.P(`errdetails := &`, p.errdetailsPkg.Use(), `.BadRequest{FieldViolations: fieldsViolations}`)
+	p.P(`st, _ := `, p.statusPkg.Use(), `.New(`, p.codesPkg.Use(), `.InvalidArgument, "Invalid arguments").WithDetails(errdetails)`)
+	p.P(`return st.Err()`)
+	p.Out()
+	p.P(`} else {`)
+	p.In()
 	p.P(`return nil`)
+	p.Out()
+	p.P(`}`)
 	p.Out()
 	p.P(`}`)
 }
@@ -289,7 +308,7 @@ func (p *plugin) generateProto3Message(file *generator.FileDescriptor, message *
 	ccTypeName := generator.CamelCaseSlice(message.TypeName())
 	p.P(`func (this *`, ccTypeName, `) Validate() error {`)
 	p.In()
-
+	p.P(`fieldsViolations := []*`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{}`)
 	for _, oneof := range message.OneofDecl {
 		oneofValidator := getOneofValidatorIfAny(oneof)
 		if oneofValidator == nil {
@@ -299,7 +318,9 @@ func (p *plugin) generateProto3Message(file *generator.FileDescriptor, message *
 			oneOfName := generator.CamelCase(oneof.GetName())
 			p.P(`if this.Get` + oneOfName + `() == nil {`)
 			p.In()
-			p.P(`return `, p.validatorPkg.Use(), `.FieldError("`, oneOfName, `",`, p.fmtPkg.Use(), `.Errorf("one of the fields must be set"))`)
+			p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{ Field: "`, oneOfName, `", Description: "one of the fields must be set"}`)
+			p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
+			//p.P(`return `, p.validatorPkg.Use(), `.FieldError("`, oneOfName, `",`, p.fmtPkg.Use(), `.Errorf("one of the fields must be set"))`)
 			p.Out()
 			p.P(`}`)
 		}
@@ -357,7 +378,9 @@ func (p *plugin) generateProto3Message(file *generator.FileDescriptor, message *
 				if nullable && !repeated {
 					p.P(`if nil == `, variableName, `{`)
 					p.In()
-					p.P(`return `, p.validatorPkg.Use(), `.FieldError("`, fieldName, `",`, p.fmtPkg.Use(), `.Errorf("message must exist"))`)
+					p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{ Field: "`, fieldName, `", Description: "message must exist"}`)
+					p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
+					//p.P(`return `, p.validatorPkg.Use(), `.FieldError("`, fieldName, `",`, p.fmtPkg.Use(), `.Errorf("message must exist"))`)
 					p.Out()
 					p.P(`}`)
 				} else if repeated {
@@ -375,7 +398,9 @@ func (p *plugin) generateProto3Message(file *generator.FileDescriptor, message *
 			}
 			p.P(`if err := `, p.validatorPkg.Use(), `.CallValidatorIfExists(`, variableName, `); err != nil {`)
 			p.In()
-			p.P(`return `, p.validatorPkg.Use(), `.FieldError("`, fieldName, `", err)`)
+			p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{ Field: "`, fieldName, `", Description: err.Error()}`)
+			p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
+			//p.P(`return `, p.validatorPkg.Use(), `.FieldError("`, fieldName, `", err)`)
 			p.Out()
 			p.P(`}`)
 			if nullable {
@@ -394,7 +419,17 @@ func (p *plugin) generateProto3Message(file *generator.FileDescriptor, message *
 			p.P(`}`)
 		}
 	}
+	p.P(`if len(fieldsViolations) > 0 {`)
+	p.In()
+	p.P(`errdetails := &`, p.errdetailsPkg.Use(), `.BadRequest{FieldViolations: fieldsViolations}`)
+	p.P(`st, _ := `, p.statusPkg.Use(), `.New(`, p.codesPkg.Use(), `.InvalidArgument, "Invalid arguments").WithDetails(errdetails)`)
+	p.P(`return st.Err()`)
+	p.Out()
+	p.P(`} else {`)
+	p.In()
 	p.P(`return nil`)
+	p.Out()
+	p.P(`}`)
 	p.Out()
 	p.P(`}`)
 }
@@ -611,9 +646,13 @@ func (p *plugin) generateRepeatedCountValidator(variableName string, ccTypeName 
 
 func (p *plugin) generateErrorString(variableName string, fieldName string, specificError string, fv *validator.FieldValidator) {
 	if fv.GetHumanError() == "" {
-		p.P(`return `, p.validatorPkg.Use(), `.FieldError("`, fieldName, `",`, p.fmtPkg.Use(), ".Errorf(`value '%v' must ", specificError, "`", `, `, variableName, `))`)
+		p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{ Field: "`, fieldName, `", Description: "value '`, variableName, `' must `, specificError, `"}`)
+		p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
+		//p.P(`return `, p.validatorPkg.Use(), `.FieldError("`, fieldName, `",`, p.fmtPkg.Use(), ".Errorf(`value '%v' must ", specificError, "`", `, `, variableName, `))`)
 	} else {
-		p.P(`return `, p.validatorPkg.Use(), `.FieldError("`, fieldName, `",`, p.fmtPkg.Use(), ".Errorf(`", fv.GetHumanError(), "`))")
+		p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{ Field: "`, fieldName, `", Description: "`, fv.GetHumanError(), `"}`)
+		p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
+		//p.P(`return `, p.validatorPkg.Use(), `.FieldError("`, fieldName, `",`, p.fmtPkg.Use(), ".Errorf(`", fv.GetHumanError(), "`))")
 	}
 }
 

@@ -3,7 +3,7 @@
 
 // Protocol Buffers extensions for defining auto-generateable validators for messages.
 
-// TODO(mwitkow): Add example.
+// TODO(lucianoapolo): Add example.
 
 
 syntax = "proto2";
@@ -11,9 +11,9 @@ package validator;
 
 import "google/protobuf/descriptor.proto";
 
-option go_package = "github.com/mwitkow/go-proto-validators;validator";
+option go_package = "github.com/lucianoapolo/go-proto-validators;validator";
 
-// TODO(mwitkow): Email protobuf-global-extension-registry@google.com to get an extension ID.
+// TODO(lucianoapolo): Email protobuf-global-extension-registry@google.com to get an extension ID.
 
 extend google.protobuf.FieldOptions {
   optional FieldValidator field = 65020;

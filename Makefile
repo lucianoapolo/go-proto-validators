@@ -19,7 +19,7 @@ gazelle:
 
 install:
 	@echo "--- Installing 'govalidators' binary to GOBIN."
-	go install github.com/mwitkow/go-proto-validators/protoc-gen-govalidators
+	go install github.com/lucianoapolo/go-proto-validators/protoc-gen-govalidators
 
 regenerate_test_gogo: prepare_deps install
 	@echo "--- Regenerating test .proto files with gogo imports"
