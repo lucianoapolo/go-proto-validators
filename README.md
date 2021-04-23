@@ -88,7 +88,7 @@ func (this *OuterMessage) Validate() []*google_golang_org_genproto_googleapis_rp
 	}
 	if this.Inner != nil {
 		if fieldsViolationsChild := github_com_lucianoapolo_go_proto_validators.CallValidatorIfExists(this.Inner); fieldsViolationsChild != nil {
-			fieldsViolations = append(fieldsViolations, fieldsViolationsChild)
+			fieldsViolations = append(fieldsViolations, fieldsViolationsChild...)
 		}
 	}
 	if len(fieldsViolations) > 0 {
