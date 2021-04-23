@@ -6,8 +6,7 @@ package validator_examples
 import (
 	fmt "fmt"
 	proto "github.com/golang/protobuf/proto"
-	_ "github.com/lucianoapolo/go-proto-validators"
-	github_com_lucianoapolo_go_proto_validators "github.com/lucianoapolo/go-proto-validators"
+	google_golang_org_genproto_googleapis_rpc_errdetails "google.golang.org/genproto/googleapis/rpc/errdetails"
 	math "math"
 )
 
@@ -16,9 +15,15 @@ var _ = proto.Marshal
 var _ = fmt.Errorf
 var _ = math.Inf
 
-func (this *SomeMsg) Validate() error {
+func (this *SomeMsg) Validate() []*google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation {
+	fieldsViolations := []*google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation{}
 	if _, ok := Action_name[int32(this.Do)]; !ok {
-		return github_com_lucianoapolo_go_proto_validators.FieldError("Do", fmt.Errorf(`value '%v' must be a valid Action field`, this.Do))
+		fieldViolation := &google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation{Field: "Do", Description: fmt.Sprintf(` value '%v' must be a valid Action field`, this.Do)}
+		fieldsViolations = append(fieldsViolations, fieldViolation)
 	}
-	return nil
+	if len(fieldsViolations) > 0 {
+		return fieldsViolations
+	} else {
+		return nil
+	}
 }

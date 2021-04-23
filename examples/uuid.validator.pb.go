@@ -6,8 +6,7 @@ package validator_examples
 import (
 	fmt "fmt"
 	proto "github.com/golang/protobuf/proto"
-	_ "github.com/lucianoapolo/go-proto-validators"
-	github_com_lucianoapolo_go_proto_validators "github.com/lucianoapolo/go-proto-validators"
+	google_golang_org_genproto_googleapis_rpc_errdetails "google.golang.org/genproto/googleapis/rpc/errdetails"
 	math "math"
 	regexp "regexp"
 )
@@ -19,12 +18,19 @@ var _ = math.Inf
 
 var _regex_UUIDMsg_UserId = regexp.MustCompile(`^([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[4][a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12})?$`)
 
-func (this *UUIDMsg) Validate() error {
+func (this *UUIDMsg) Validate() []*google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation {
+	fieldsViolations := []*google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation{}
 	if !_regex_UUIDMsg_UserId.MatchString(this.UserId) {
-		return github_com_lucianoapolo_go_proto_validators.FieldError("UserId", fmt.Errorf(`value '%v' must be a string conforming to regex "^([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[4][a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12})?$"`, this.UserId))
+		fieldViolation := &google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation{Field: "UserId", Description: fmt.Sprintf(` value '%v' must be a string conforming to regex "^([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[4][a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12})?$"`, this.UserId)}
+		fieldsViolations = append(fieldsViolations, fieldViolation)
 	}
 	if this.UserId == "" {
-		return github_com_lucianoapolo_go_proto_validators.FieldError("UserId", fmt.Errorf(`value '%v' must not be an empty string`, this.UserId))
+		fieldViolation := &google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation{Field: "UserId", Description: fmt.Sprintf(` value '%v' must not be an empty string`, this.UserId)}
+		fieldsViolations = append(fieldsViolations, fieldViolation)
 	}
-	return nil
+	if len(fieldsViolations) > 0 {
+		return fieldsViolations
+	} else {
+		return nil
+	}
 }

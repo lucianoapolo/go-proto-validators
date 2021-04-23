@@ -651,10 +651,10 @@ func (p *plugin) generateRepeatedCountValidator(variableName string, ccTypeName 
 
 func (p *plugin) generateErrorString(variableName string, fieldName string, specificError string, fv *validator.FieldValidator) {
 	if fv.GetHumanError() == "" {
-		p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{ Field: "`, fieldName, `", Description: "value '`, variableName, `' must `, specificError, `"}`)
+		p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{Field: "`, fieldName, `",`, "Description: fmt.Sprintf(` value '%v' must ", specificError, "`, ", variableName, ")}")
 		p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
 	} else {
-		p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{ Field: "`, fieldName, `", Description: "`, fv.GetHumanError(), `"}`)
+		p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{Field: "`, fieldName, `",`, "Description: `", fv.GetHumanError(), "`}")
 		p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
 	}
 }

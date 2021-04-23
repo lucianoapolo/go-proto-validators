@@ -13,8 +13,8 @@ Using Protobuf validators is currently verified to work with:
 
 - Go 1.11, 1.12, 1.13
 - [Protobuf](https://github.com/protocolbuffers/protobuf) @ `v3.8.0`
-- [Go Protobuf](https://github.com/golang/protobuf) @ `v1.3.2`
-- [Gogo Protobuf](https://github.com/gogo/protobuf) @ `v1.3.0`
+- [Go Protobuf](https://github.com/golang/protobuf) @ `v1.5.2`
+- [Gogo Protobuf](https://github.com/gogo/protobuf) @ `v1.3.2`
 
 It _should_ still be possible to use it in project using earlier Go versions. However if you want to contribute to this
 repository you'll need at least 1.11 for Go module support.
@@ -50,37 +50,52 @@ Second, the expected values in fields are now part of the contract `.proto` file
 Third, the generated code is understandable and has clear understandable error messages. Take a look:
 
 ```go
-func (this *InnerMessage) Validate() error {
+func (this *InnerMessage) Validate() []*google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation {
+	fieldsViolations := []*google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation{}
 	if !(this.SomeInteger > 0) {
-		return fmt.Errorf("validation error: InnerMessage.SomeInteger must be greater than '0'")
+		fieldViolation := &google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation{Field: "InnerMessage.SomeInteger", Description: "InnerMessage.SomeInteger must be greater than '0'"}
+		fieldsViolations = append(fieldsViolations, fieldViolation)
 	}
 	if !(this.SomeInteger < 100) {
-		return fmt.Errorf("validation error: InnerMessage.SomeInteger must be less than '100'")
+		fieldViolation := &google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation{Field: "InnerMessage.SomeInteger", Description: "InnerMessage.SomeInteger must be less than '100'"}
+		fieldsViolations = append(fieldsViolations, fieldViolation)
 	}
 	if !(this.SomeFloat >= 0) {
-		return fmt.Errorf("validation error: InnerMessage.SomeFloat must be greater than or equal to '0'")
+		fieldViolation := &google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation{Field: "InnerMessage.SomeFloat", Description: "InnerMessage.SomeFloat must be greater than or equal to '0'"}
+		fieldsViolations = append(fieldsViolations, fieldViolation)
 	}
 	if !(this.SomeFloat <= 1) {
-		return fmt.Errorf("validation error: InnerMessage.SomeFloat must be less than or equal to '1'")
+		fieldViolation := &google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation{Field: "InnerMessage.SomeFloat", Description: "InnerMessage.SomeFloat must be less than or equal to '1'"}
+		fieldsViolations = append(fieldsViolations, fieldViolation)
 	}
-	return nil
+	if len(fieldsViolations) > 0 {
+		return fieldsViolations
+	} else {
+		return nil
+	}
 }
 
 var _regex_OuterMessage_ImportantString = regexp.MustCompile("^[a-z0-9]{5,30}$")
 
-func (this *OuterMessage) Validate() error {
+func (this *OuterMessage) Validate() []*google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation {
 	if !_regex_OuterMessage_ImportantString.MatchString(this.ImportantString) {
-		return fmt.Errorf("validation error: OuterMessage.ImportantString must conform to regex '^[a-z0-9]{5,30}$'")
+		fieldViolation := &google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation{Field: "OuterMessage.ImportantString", Description: "OuterMessage.ImportantString must conform to regex '^[a-z0-9]{5,30}$'"}
+		fieldsViolations = append(fieldsViolations, fieldViolation)
 	}
 	if nil == this.Inner {
-		return fmt.Errorf("validation error: OuterMessage.Inner message must exist")
+		fieldViolation := &google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation{Field: "OuterMessage.Inner", Description: "OuterMessage.Inner message must exist"}
+		fieldsViolations = append(fieldsViolations, fieldViolation)
 	}
 	if this.Inner != nil {
-		if err := validators.CallValidatorIfExists(this.Inner); err != nil {
-			return err
+		if fieldsViolationsChild := github_com_lucianoapolo_go_proto_validators.CallValidatorIfExists(this.Inner); fieldsViolationsChild != nil {
+			fieldsViolations = append(fieldsViolations, fieldsViolationsChild)
 		}
 	}
-	return nil
+	if len(fieldsViolations) > 0 {
+		return fieldsViolations
+	} else {
+		return nil
+	}
 }
 ```
 

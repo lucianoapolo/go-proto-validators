@@ -6,8 +6,8 @@ package validator_examples
 import (
 	fmt "fmt"
 	proto "github.com/golang/protobuf/proto"
-	_ "github.com/lucianoapolo/go-proto-validators"
 	github_com_lucianoapolo_go_proto_validators "github.com/lucianoapolo/go-proto-validators"
+	google_golang_org_genproto_googleapis_rpc_errdetails "google.golang.org/genproto/googleapis/rpc/errdetails"
 	math "math"
 	regexp "regexp"
 )
@@ -17,29 +17,43 @@ var _ = proto.Marshal
 var _ = fmt.Errorf
 var _ = math.Inf
 
-func (this *InnerMessage) Validate() error {
+func (this *InnerMessage) Validate() []*google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation {
+	fieldsViolations := []*google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation{}
 	if !(this.SomeInteger > 0) {
-		return github_com_lucianoapolo_go_proto_validators.FieldError("SomeInteger", fmt.Errorf(`value '%v' must be greater than '0'`, this.SomeInteger))
+		fieldViolation := &google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation{Field: "SomeInteger", Description: fmt.Sprintf(` value '%v' must be greater than '0'`, this.SomeInteger)}
+		fieldsViolations = append(fieldsViolations, fieldViolation)
 	}
 	if !(this.SomeInteger < 100) {
-		return github_com_lucianoapolo_go_proto_validators.FieldError("SomeInteger", fmt.Errorf(`value '%v' must be less than '100'`, this.SomeInteger))
+		fieldViolation := &google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation{Field: "SomeInteger", Description: fmt.Sprintf(` value '%v' must be less than '100'`, this.SomeInteger)}
+		fieldsViolations = append(fieldsViolations, fieldViolation)
 	}
-	return nil
+	if len(fieldsViolations) > 0 {
+		return fieldsViolations
+	} else {
+		return nil
+	}
 }
 
 var _regex_OuterMessage_ImportantString = regexp.MustCompile(`^[a-z]{2,5}$`)
 
-func (this *OuterMessage) Validate() error {
+func (this *OuterMessage) Validate() []*google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation {
+	fieldsViolations := []*google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation{}
 	if !_regex_OuterMessage_ImportantString.MatchString(this.ImportantString) {
-		return github_com_lucianoapolo_go_proto_validators.FieldError("ImportantString", fmt.Errorf(`value '%v' must be a string conforming to regex "^[a-z]{2,5}$"`, this.ImportantString))
+		fieldViolation := &google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation{Field: "ImportantString", Description: fmt.Sprintf(` value '%v' must be a string conforming to regex "^[a-z]{2,5}$"`, this.ImportantString)}
+		fieldsViolations = append(fieldsViolations, fieldViolation)
 	}
 	if nil == this.Inner {
-		return github_com_lucianoapolo_go_proto_validators.FieldError("Inner", fmt.Errorf("message must exist"))
+		fieldViolation := &google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation{Field: "Inner", Description: "message must exist"}
+		fieldsViolations = append(fieldsViolations, fieldViolation)
 	}
 	if this.Inner != nil {
-		if err := github_com_lucianoapolo_go_proto_validators.CallValidatorIfExists(this.Inner); err != nil {
-			return github_com_lucianoapolo_go_proto_validators.FieldError("Inner", nil)
+		if fieldsViolationsChild := github_com_lucianoapolo_go_proto_validators.CallValidatorIfExists(this.Inner); fieldsViolationsChild != nil {
+			fieldsViolations = append(fieldsViolations, fieldsViolationsChild)
 		}
 	}
-	return nil
+	if len(fieldsViolations) > 0 {
+		return fieldsViolations
+	} else {
+		return nil
+	}
 }
