@@ -270,7 +270,7 @@ func (p *plugin) generateProto2Message(file *generator.FileDescriptor, message *
 				}
 				p.P(`if fieldsViolationsChild := `, p.validatorPkg.Use(), `.CallValidatorIfExists(`, variableName, `); fieldsViolationsChild != nil {`)
 				p.In()
-				p.P(`fieldsViolations = append(fieldsViolations, fieldsViolationsChild)`)
+				p.P(`fieldsViolations = append(fieldsViolations, fieldsViolationsChild...)`)
 				p.Out()
 				p.P(`}`)
 			}
@@ -402,7 +402,7 @@ func (p *plugin) generateProto3Message(file *generator.FileDescriptor, message *
 				}
 				p.P(`if fieldsViolationsChild := `, p.validatorPkg.Use(), `.CallValidatorIfExists(`, variableName, `); fieldsViolationsChild != nil {`)
 				p.In()
-				p.P(`fieldsViolations = append(fieldsViolations, fieldsViolationsChild)`)
+				p.P(`fieldsViolations = append(fieldsViolations, fieldsViolationsChild...)`)
 				p.Out()
 				p.P(`}`)
 				if nullable {
