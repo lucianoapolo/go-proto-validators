@@ -38,7 +38,7 @@ func (this *OuterMessage) Validate() error {
 	}
 	if this.Inner != nil {
 		if err := github_com_lucianoapolo_go_proto_validators.CallValidatorIfExists(this.Inner); err != nil {
-			return github_com_lucianoapolo_go_proto_validators.FieldError("Inner", err)
+			return github_com_lucianoapolo_go_proto_validators.FieldError("Inner", nil)
 		}
 	}
 	return nil

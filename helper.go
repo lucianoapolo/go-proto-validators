@@ -3,14 +3,18 @@
 
 package validator
 
-import "strings"
+import (
+	"strings"
+
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+)
 
 // Validator is a general interface that allows a message to be validated.
 type Validator interface {
-	Validate() error
+	Validate() []*errdetails.BadRequest_FieldViolation
 }
 
-func CallValidatorIfExists(candidate interface{}) error {
+func CallValidatorIfExists(candidate interface{}) []*errdetails.BadRequest_FieldViolation {
 	if validator, ok := candidate.(Validator); ok {
 		return validator.Validate()
 	}

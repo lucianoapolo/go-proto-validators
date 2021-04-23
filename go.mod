@@ -3,7 +3,8 @@ module github.com/lucianoapolo/go-proto-validators
 go 1.13
 
 require (
-	github.com/gogo/protobuf v1.3.0
-	github.com/golang/protobuf v1.3.2
-	github.com/stretchr/testify v1.3.0
+	github.com/gogo/protobuf v1.3.2
+	github.com/golang/protobuf v1.5.2
+	github.com/stretchr/testify v1.5.1
+	google.golang.org/genproto v0.0.0-20210423144448-3a41ef94ed2b
 )
