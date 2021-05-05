@@ -31,18 +31,26 @@ func main() {
 	}
 
 	useGogoImport := false
+	langParam := validator_plugin.LangDefault
+
 	// Match parsing algorithm from Generator.CommandLineParameters
 	for _, parameter := range strings.Split(gen.Request.GetParameter(), ",") {
 		kvp := strings.SplitN(parameter, "=", 2)
 		// We only care about key-value pairs where the key is "gogoimport"
-		if len(kvp) != 2 || kvp[0] != "gogoimport" {
-			continue
-		}
-		useGogoImport, err = strconv.ParseBool(kvp[1])
-		if err != nil {
-			gen.Error(err, "parsing gogoimport option")
+		if len(kvp) == 2 {
+			if kvp[0] == "gogoimport" {
+				useGogoImport, err = strconv.ParseBool(kvp[1])
+				if err != nil {
+					gen.Error(err, "parsing gogoimport option")
+				}
+			}
+			if kvp[0] == "lang" {
+				langParam = strings.TrimSpace(kvp[1])
+			}
 		}
 	}
+
+	validator_plugin.SetLanguage(langParam)
 
 	gen.CommandLineParameters(gen.Request.GetParameter())
 

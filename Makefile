@@ -45,8 +45,8 @@ regenerate_example: prepare_deps install
 		--proto_path=deps \
 		--proto_path=deps/include \
 		--proto_path=. \
-		--go_out=. \
-		--govalidators_out=. examples/*.proto
+		--go_out=. --go_opt paths=source_relative \
+		--govalidators_out=lang=pt_br:. examples/*.proto --govalidators_opt paths=source_relative
 
 test: regenerate_test_gogo regenerate_test_golang
 	@echo "Running tests"
@@ -59,7 +59,7 @@ regenerate: prepare_deps
 		--proto_path=deps/include \
 		--proto_path=deps/github.com/gogo/protobuf/protobuf \
 		--proto_path=. \
-		--gogo_out=Mgoogle/protobuf/descriptor.proto=github.com/gogo/protobuf/protoc-gen-gogo/descriptor:. \
+		--gogo_out=Mgoogle/protobuf/descriptor.proto=github.com/gogo/protobuf/protoc-gen-gogo/descriptor:. --gogo_opt paths=source_relative \
 		validator.proto
 
 clean:

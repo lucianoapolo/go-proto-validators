@@ -2,6 +2,8 @@ syntax = "proto3";
 package validator.examples;
 import "github.com/lucianoapolo/go-proto-validators/validator.proto";
 
+option go_package = "github.com/lucianoapolo/go-proto-validators/examples;validatorexamples";
+
 message SomeMsg {
   Action do = 1 [(validator.field) = {is_in_enum : true}];
 }

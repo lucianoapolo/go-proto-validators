@@ -75,9 +75,23 @@ type plugin struct {
 	generator.PluginImports
 	regexPkg      generator.Single
 	fmtPkg        generator.Single
+	stringsPkg    generator.Single
 	validatorPkg  generator.Single
 	errdetailsPkg generator.Single
 	useGogoImport bool
+}
+
+var lang string
+
+func SetLanguage(langParam string) {
+	switch strings.ToLower(langParam) {
+	case LangPtBr:
+		lang = LangPtBr
+	case LangDefault:
+		lang = LangDefault
+	default:
+		lang = LangDefault
+	}
 }
 
 func NewPlugin(useGogoImport bool) generator.Plugin {
@@ -99,6 +113,7 @@ func (p *plugin) Generate(file *generator.FileDescriptor) {
 	p.PluginImports = generator.NewPluginImports(p.Generator)
 	p.regexPkg = p.NewImport("regexp")
 	p.fmtPkg = p.NewImport("fmt")
+	p.stringsPkg = p.NewImport("strings")
 	p.validatorPkg = p.NewImport("github.com/lucianoapolo/go-proto-validators")
 	p.errdetailsPkg = p.NewImport("google.golang.org/genproto/googleapis/rpc/errdetails")
 
@@ -115,11 +130,11 @@ func (p *plugin) Generate(file *generator.FileDescriptor) {
 	}
 }
 
-func getFieldValidatorIfAny(field *descriptor.FieldDescriptorProto) *validator.FieldValidator {
+func getFieldValidatorIfAny(field *descriptor.FieldDescriptorProto) []*validator.FieldValidator {
 	if field.Options != nil {
 		v, err := proto.GetExtension(field.Options, validator.E_Field)
-		if err == nil && v.(*validator.FieldValidator) != nil {
-			return (v.(*validator.FieldValidator))
+		if err == nil && v.([]*validator.FieldValidator) != nil {
+			return (v.([]*validator.FieldValidator))
 		}
 	}
 	return nil
@@ -162,21 +177,23 @@ func (p *plugin) isSupportedFloat(field *descriptor.FieldDescriptorProto) bool {
 func (p *plugin) generateRegexVars(file *generator.FileDescriptor, message *generator.Descriptor) {
 	ccTypeName := generator.CamelCaseSlice(message.TypeName())
 	for _, field := range message.Field {
-		validator := getFieldValidatorIfAny(field)
-		if validator != nil {
-			fieldName := p.GetOneOfFieldName(message, field)
-			if validator.Regex != nil && validator.UuidVer != nil {
-				fmt.Fprintf(os.Stderr, "WARNING: regex and uuid validator is set for field %v.%v, only one of them can be set. Regex and UUID validator is ignored for this field.", ccTypeName, fieldName)
-			} else if validator.UuidVer != nil {
-				uuid, err := getUUIDRegex(validator.UuidVer)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "WARNING: field %v.%v error %s.\n", ccTypeName, fieldName, err)
-				} else {
-					validator.Regex = &uuid
-					p.P(`var `, p.regexName(ccTypeName, fieldName), ` = `, p.regexPkg.Use(), `.MustCompile(`, "`", *validator.Regex, "`", `)`)
+		validators := getFieldValidatorIfAny(field)
+		if len(validators) > 0 {
+			for i, validator := range validators {
+				fieldName := p.GetOneOfFieldName(message, field)
+				if validator.Regex != nil && validator.UuidVer != nil {
+					fmt.Fprintf(os.Stderr, "WARNING: regex and uuid validator is set for field %v.%v, only one of them can be set. Regex and UUID validator is ignored for this field.", ccTypeName, fieldName)
+				} else if validator.UuidVer != nil {
+					uuid, err := getUUIDRegex(validator.UuidVer)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "WARNING: field %v.%v error %s.\n", ccTypeName, fieldName, err)
+					} else {
+						validator.Regex = &uuid
+						p.P(`var `, p.regexName(ccTypeName, fieldName, i), ` = `, p.regexPkg.Use(), `.MustCompile(`, "`", *validator.Regex, "`", `)`)
+					}
+				} else if validator.Regex != nil {
+					p.P(`var `, p.regexName(ccTypeName, fieldName, i), ` = `, p.regexPkg.Use(), `.MustCompile(`, "`", *validator.Regex, "`", `)`)
 				}
-			} else if validator.Regex != nil {
-				p.P(`var `, p.regexName(ccTypeName, fieldName), ` = `, p.regexPkg.Use(), `.MustCompile(`, "`", *validator.Regex, "`", `)`)
 			}
 		}
 	}
@@ -216,11 +233,11 @@ func (p *plugin) generateProto2Message(file *generator.FileDescriptor, message *
 
 		for _, field := range message.Field {
 			fieldName := p.GetFieldName(message, field)
-			fieldValidator := getFieldValidatorIfAny(field)
-			if fieldValidator == nil && !field.IsMessage() {
+			validators := getFieldValidatorIfAny(field)
+			if len(validators) == 0 && !field.IsMessage() {
 				continue
 			}
-			if p.validatorWithMessageExists(fieldValidator) {
+			if p.validatorWithMessageExists(validators) {
 				fmt.Fprintf(os.Stderr, "WARNING: field %v.%v is a proto2 message, validator.msg_exists has no effect\n", ccTypeName, fieldName)
 			}
 			variableName := "this." + fieldName
@@ -229,8 +246,8 @@ func (p *plugin) generateProto2Message(file *generator.FileDescriptor, message *
 			// For proto2 syntax, only Gogo generates non-pointer fields
 			nonpointer := gogoproto.ImportsGoGoProto(file.FileDescriptorProto) && !gogoproto.IsNullable(field)
 			if repeated {
-				p.generateRepeatedCountValidator(variableName, ccTypeName, fieldName, fieldValidator)
-				if field.IsMessage() || p.validatorWithNonRepeatedConstraint(fieldValidator) {
+				p.generateRepeatedCountValidator(variableName, ccTypeName, fieldName, validators)
+				if field.IsMessage() || p.validatorWithNonRepeatedConstraint(validators) {
 					p.P(`for _, item := range `, variableName, `{`)
 					p.In()
 					variableName = "item"
@@ -246,25 +263,30 @@ func (p *plugin) generateProto2Message(file *generator.FileDescriptor, message *
 			} else if !field.IsMessage() {
 				variableName = `this.Get` + fieldName + `()`
 			}
-			if !repeated && fieldValidator != nil {
-				if fieldValidator.RepeatedCountMin != nil {
-					fmt.Fprintf(os.Stderr, "WARNING: field %v.%v is not repeated, validator.min_elts has no effects\n", ccTypeName, fieldName)
-				}
-				if fieldValidator.RepeatedCountMax != nil {
-					fmt.Fprintf(os.Stderr, "WARNING: field %v.%v is not repeated, validator.max_elts has no effects\n", ccTypeName, fieldName)
+			if !repeated && len(validators) > 0 {
+				for _, validator := range validators {
+					if validator.RepeatedCountMin != nil {
+						fmt.Fprintf(os.Stderr, "WARNING: field %v.%v is not repeated, validator.min_elts has no effects\n", ccTypeName, fieldName)
+					}
+					if validator.RepeatedCountMax != nil {
+						fmt.Fprintf(os.Stderr, "WARNING: field %v.%v is not repeated, validator.max_elts has no effects\n", ccTypeName, fieldName)
+					}
 				}
 			}
-			if field.IsString() {
-				p.generateStringValidator(variableName, ccTypeName, fieldName, fieldValidator)
-			} else if p.isSupportedInt(field) {
-				p.generateIntValidator(variableName, ccTypeName, fieldName, fieldValidator)
-			} else if field.IsEnum() {
-				p.generateEnumValidator(field, variableName, ccTypeName, fieldName, fieldValidator)
-			} else if p.isSupportedFloat(field) {
-				p.generateFloatValidator(variableName, ccTypeName, fieldName, fieldValidator)
-			} else if field.IsBytes() {
-				p.generateLengthValidator(variableName, ccTypeName, fieldName, fieldValidator)
-			} else if field.IsMessage() {
+			for i, validator := range validators {
+				if field.IsString() {
+					p.generateStringValidator(variableName, ccTypeName, fieldName, validator, i)
+				} else if p.isSupportedInt(field) {
+					p.generateIntValidator(variableName, ccTypeName, fieldName, validator)
+				} else if field.IsEnum() {
+					p.generateEnumValidator(field, variableName, ccTypeName, fieldName, validator)
+				} else if p.isSupportedFloat(field) {
+					p.generateFloatValidator(variableName, ccTypeName, fieldName, validator)
+				} else if field.IsBytes() {
+					p.generateLengthValidator(variableName, ccTypeName, fieldName, validator)
+				}
+			}
+			if field.IsMessage() {
 				if repeated && nullable {
 					variableName = "*(item)"
 				}
@@ -276,7 +298,7 @@ func (p *plugin) generateProto2Message(file *generator.FileDescriptor, message *
 			}
 			if repeated {
 				// end the repeated loop
-				if field.IsMessage() || p.validatorWithNonRepeatedConstraint(fieldValidator) {
+				if field.IsMessage() || p.validatorWithNonRepeatedConstraint(validators) {
 					// This internal 'if' cannot be refactored as it would change semantics with respect to the corresponding prelude 'if's
 					p.Out()
 					p.P(`}`)
@@ -285,6 +307,7 @@ func (p *plugin) generateProto2Message(file *generator.FileDescriptor, message *
 				// end the if around nullable
 				p.Out()
 				p.P(`}`)
+
 			}
 		}
 		p.P(`if len(fieldsViolations) > 0 {`)
@@ -324,15 +347,15 @@ func (p *plugin) generateProto3Message(file *generator.FileDescriptor, message *
 				oneOfName := generator.CamelCase(oneof.GetName())
 				p.P(`if this.Get` + oneOfName + `() == nil {`)
 				p.In()
-				p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{ Field: "`, oneOfName, `", Description: "one of the fields must be set"}`)
+				p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{Field: "`, oneOfName, `", Description: `, errorOneofValidator[lang], `}`)
 				p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
 				p.Out()
 				p.P(`}`)
 			}
 		}
 		for _, field := range message.Field {
-			fieldValidator := getFieldValidatorIfAny(field)
-			if fieldValidator == nil && !field.IsMessage() {
+			validators := getFieldValidatorIfAny(field)
+			if len(validators) == 0 && !field.IsMessage() {
 				continue
 			}
 			isOneOf := field.OneofIndex != nil
@@ -354,43 +377,80 @@ func (p *plugin) generateProto3Message(file *generator.FileDescriptor, message *
 				variableName = "oneOfNester." + p.GetOneOfFieldName(message, field)
 			}
 			if repeated {
-				p.generateRepeatedCountValidator(variableName, ccTypeName, fieldName, fieldValidator)
-				if field.IsMessage() || p.validatorWithNonRepeatedConstraint(fieldValidator) {
+				p.generateRepeatedCountValidator(variableName, ccTypeName, fieldName, validators)
+				if field.IsMessage() || p.validatorWithNonRepeatedConstraint(validators) {
 					p.P(`for _, item := range `, variableName, `{`)
 					p.In()
 					variableName = "item"
 				}
-			} else if fieldValidator != nil {
-				if fieldValidator.RepeatedCountMin != nil {
-					fmt.Fprintf(os.Stderr, "WARNING: field %v.%v is not repeated, validator.min_elts has no effects\n", ccTypeName, fieldName)
-				}
-				if fieldValidator.RepeatedCountMax != nil {
-					fmt.Fprintf(os.Stderr, "WARNING: field %v.%v is not repeated, validator.max_elts has no effects\n", ccTypeName, fieldName)
+			} else if len(validators) > 0 {
+				for _, validator := range validators {
+					if validator.RepeatedCountMin != nil {
+						fmt.Fprintf(os.Stderr, "WARNING: field %v.%v is not repeated, validator.min_elts has no effects\n", ccTypeName, fieldName)
+					}
+					if validator.RepeatedCountMax != nil {
+						fmt.Fprintf(os.Stderr, "WARNING: field %v.%v is not repeated, validator.max_elts has no effects\n", ccTypeName, fieldName)
+					}
 				}
 			}
-			if field.IsString() {
-				p.generateStringValidator(variableName, ccTypeName, fieldName, fieldValidator)
-			} else if p.isSupportedInt(field) {
-				p.generateIntValidator(variableName, ccTypeName, fieldName, fieldValidator)
-			} else if field.IsEnum() {
-				p.generateEnumValidator(field, variableName, ccTypeName, fieldName, fieldValidator)
-			} else if p.isSupportedFloat(field) {
-				p.generateFloatValidator(variableName, ccTypeName, fieldName, fieldValidator)
-			} else if field.IsBytes() {
-				p.generateLengthValidator(variableName, ccTypeName, fieldName, fieldValidator)
-			} else if field.IsMessage() {
-				if p.validatorWithMessageExists(fieldValidator) {
-					if nullable && !repeated {
-						p.P(`if nil == `, variableName, `{`)
-						p.In()
-						p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{ Field: "`, fieldName, `", Description: "message must exist"}`)
-						p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
-						p.Out()
-						p.P(`}`)
-					} else if repeated {
-						fmt.Fprintf(os.Stderr, "WARNING: field %v.%v is repeated, validator.msg_exists has no effect\n", ccTypeName, fieldName)
-					} else if !nullable {
-						fmt.Fprintf(os.Stderr, "WARNING: field %v.%v is a nullable=false, validator.msg_exists has no effect\n", ccTypeName, fieldName)
+			for i, validator := range validators {
+				if field.IsString() {
+					p.generateStringValidator(variableName, ccTypeName, fieldName, validator, i)
+				} else if p.isSupportedInt(field) {
+					p.generateIntValidator(variableName, ccTypeName, fieldName, validator)
+				} else if field.IsEnum() {
+					p.generateEnumValidator(field, variableName, ccTypeName, fieldName, validator)
+				} else if p.isSupportedFloat(field) {
+					p.generateFloatValidator(variableName, ccTypeName, fieldName, validator)
+				} else if field.IsBytes() {
+					p.generateLengthValidator(variableName, ccTypeName, fieldName, validator)
+				}
+			}
+			if field.IsMessage() {
+				for _, validator := range validators {
+					if validator.MsgExists != nil && *(validator.MsgExists) {
+						if nullable && !repeated {
+							p.P(`if nil == `, variableName, `{`)
+							p.In()
+							errorStr := errorMsgExists[lang]
+							p.generateErrorStringEmpty(variableName, fieldName, errorStr, validator)
+							//if validator.GetHumanError() == "" {
+							//	p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{Field: "`, fieldName, `", Description: "message must exist"}`)
+							//	p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
+							//} else {
+							//	p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{Field: "`, fieldName, `",`, "Description: `", validator.GetHumanError(), "`}")
+							//	p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
+							//}
+							p.Out()
+							p.P(`}`)
+						} else if repeated {
+							fmt.Fprintf(os.Stderr, "WARNING: field %v.%v is repeated, validator.msg_exists has no effect\n", ccTypeName, fieldName)
+						} else if !nullable {
+							fmt.Fprintf(os.Stderr, "WARNING: field %v.%v is a nullable=false, validator.msg_exists has no effect\n", ccTypeName, fieldName)
+						}
+					}
+					if validator.MsgExistsIfAnotherNot != nil && *validator.MsgExistsIfAnotherNot != "" {
+						if nullable && !repeated {
+							anotherFiledName := *validator.MsgExistsIfAnotherNot
+							anotherVariableName := "this." + anotherFiledName
+							p.P(`if nil == `, variableName, ` && nil == `, anotherVariableName, ` {`)
+							p.In()
+							errorStr := fmt.Sprintf(errorMsgExistsIfAnotherNot[lang], anotherFiledName)
+							p.generateErrorStringEmpty(variableName, fieldName, errorStr, validator)
+							//if validator.GetHumanError() == "" {
+							//	p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{Field: "`, fieldName, `", Description: "`, fmt.Sprintf(errorMsgExistsIfAnotherNot[lang], anotherFiledName), `"}`)
+							//p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{Field: "`, fieldName, `", Description: "message must exist if message `, anotherFiledName, ` is not exists"}`)
+							//} else {
+							//	p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{Field: "`, fieldName, `",`, "Description: `", validator.GetHumanError(), "`}")
+							//}
+							p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
+							p.Out()
+							p.P(`}`)
+						} else if repeated {
+							fmt.Fprintf(os.Stderr, "WARNING: field %v.%v is repeated, validator.msg_exists_if_another_empty has no effect\n", ccTypeName, fieldName)
+						} else if !nullable {
+							fmt.Fprintf(os.Stderr, "WARNING: field %v.%v is a nullable=false, validator.msg_exists_if_another_empty has no effect\n", ccTypeName, fieldName)
+						}
 					}
 				}
 				if nullable {
@@ -410,7 +470,7 @@ func (p *plugin) generateProto3Message(file *generator.FileDescriptor, message *
 					p.P(`}`)
 				}
 			}
-			if repeated && (field.IsMessage() || p.validatorWithNonRepeatedConstraint(fieldValidator)) {
+			if repeated && (field.IsMessage() || p.validatorWithNonRepeatedConstraint(validators)) {
 				// end the repeated loop
 				p.Out()
 				p.P(`}`)
@@ -443,7 +503,7 @@ func (p *plugin) generateIntValidator(variableName string, ccTypeName string, fi
 	if fv.IntGt != nil {
 		p.P(`if !(`, variableName, ` > `, fv.IntGt, `) {`)
 		p.In()
-		errorStr := fmt.Sprintf(`be greater than '%d'`, fv.GetIntGt())
+		errorStr := fmt.Sprintf(errorIntGt[lang], fv.GetIntGt())
 		p.generateErrorString(variableName, fieldName, errorStr, fv)
 		p.Out()
 		p.P(`}`)
@@ -451,7 +511,23 @@ func (p *plugin) generateIntValidator(variableName string, ccTypeName string, fi
 	if fv.IntLt != nil {
 		p.P(`if !(`, variableName, ` < `, fv.IntLt, `) {`)
 		p.In()
-		errorStr := fmt.Sprintf(`be less than '%d'`, fv.GetIntLt())
+		errorStr := fmt.Sprintf(errorIntLt[lang], fv.GetIntLt())
+		p.generateErrorString(variableName, fieldName, errorStr, fv)
+		p.Out()
+		p.P(`}`)
+	}
+	if fv.IntGte != nil {
+		p.P(`if !(`, variableName, ` >= `, fv.IntGte, `) {`)
+		p.In()
+		errorStr := fmt.Sprintf(errorIntGte[lang], fv.GetIntGte())
+		p.generateErrorString(variableName, fieldName, errorStr, fv)
+		p.Out()
+		p.P(`}`)
+	}
+	if fv.IntLte != nil {
+		p.P(`if !(`, variableName, ` <= `, fv.IntLte, `) {`)
+		p.In()
+		errorStr := fmt.Sprintf(errorIntLte[lang], fv.GetIntLte())
 		p.generateErrorString(variableName, fieldName, errorStr, fv)
 		p.Out()
 		p.P(`}`)
@@ -466,7 +542,7 @@ func (p *plugin) generateEnumValidator(
 		enum := p.ObjectNamed(field.GetTypeName()).(*generator.EnumDescriptor)
 		p.P(`if _, ok := `, strings.Join(enum.TypeName(), "_"), "_name[int32(", variableName, ")]; !ok {")
 		p.In()
-		p.generateErrorString(variableName, fieldName, fmt.Sprintf("be a valid %s field", strings.Join(enum.TypeName(), "_")), fv)
+		p.generateErrorString(variableName, fieldName, fmt.Sprintf(errorIsInEnum[lang], strings.Join(enum.TypeName(), "_")), fv)
 		p.Out()
 		p.P(`}`)
 	}
@@ -476,7 +552,7 @@ func (p *plugin) generateLengthValidator(variableName string, ccTypeName string,
 	if fv.LengthGt != nil {
 		p.P(`if !( len(`, variableName, `) > `, fv.LengthGt, `) {`)
 		p.In()
-		errorStr := fmt.Sprintf(`have a length greater than '%d'`, fv.GetLengthGt())
+		errorStr := fmt.Sprintf(errorLengthGt[lang], fv.GetLengthGt())
 		p.generateErrorString(variableName, fieldName, errorStr, fv)
 		p.Out()
 		p.P(`}`)
@@ -485,7 +561,7 @@ func (p *plugin) generateLengthValidator(variableName string, ccTypeName string,
 	if fv.LengthLt != nil {
 		p.P(`if !( len(`, variableName, `) < `, fv.LengthLt, `) {`)
 		p.In()
-		errorStr := fmt.Sprintf(`have a length smaller than '%d'`, fv.GetLengthLt())
+		errorStr := fmt.Sprintf(errorLengthLt[lang], fv.GetLengthLt())
 		p.generateErrorString(variableName, fieldName, errorStr, fv)
 		p.Out()
 		p.P(`}`)
@@ -494,7 +570,7 @@ func (p *plugin) generateLengthValidator(variableName string, ccTypeName string,
 	if fv.LengthEq != nil {
 		p.P(`if !( len(`, variableName, `) == `, fv.LengthEq, `) {`)
 		p.In()
-		errorStr := fmt.Sprintf(`have a length equal to '%d'`, fv.GetLengthEq())
+		errorStr := fmt.Sprintf(errorLengthEq[lang], fv.GetLengthEq())
 		p.generateErrorString(variableName, fieldName, errorStr, fv)
 		p.Out()
 		p.P(`}`)
@@ -543,14 +619,14 @@ func (p *plugin) generateFloatValidator(variableName string, ccTypeName string, 
 	if fv.FloatGt != nil || fv.FloatGte != nil {
 		compareStr = fmt.Sprint(`if !(`, variableName)
 		if lowerIsStrict {
-			errorStr = fmt.Sprintf(`be strictly greater than '%g'`, fv.GetFloatGt())
+			errorStr = fmt.Sprintf(errorFloatGt[lang], fv.GetFloatGt())
 			if fv.FloatEpsilon != nil {
-				errorStr += fmt.Sprintf(` with a tolerance of '%g'`, fv.GetFloatEpsilon())
+				errorStr += fmt.Sprintf(errorFloatGtEpsilon[lang], fv.GetFloatEpsilon())
 				compareStr += fmt.Sprint(` + `, fv.GetFloatEpsilon())
 			}
 			compareStr += fmt.Sprint(` > `, fv.GetFloatGt(), `) {`)
 		} else {
-			errorStr = fmt.Sprintf(`be greater than or equal to '%g'`, fv.GetFloatGte())
+			errorStr = fmt.Sprintf(errorFloatGte[lang], fv.GetFloatGte())
 			compareStr += fmt.Sprint(` >= `, fv.GetFloatGte(), `) {`)
 		}
 		p.P(compareStr)
@@ -563,14 +639,14 @@ func (p *plugin) generateFloatValidator(variableName string, ccTypeName string, 
 	if fv.FloatLt != nil || fv.FloatLte != nil {
 		compareStr = fmt.Sprint(`if !(`, variableName)
 		if upperIsStrict {
-			errorStr = fmt.Sprintf(`be strictly lower than '%g'`, fv.GetFloatLt())
+			errorStr = fmt.Sprintf(errorFloatLt[lang], fv.GetFloatLt())
 			if fv.FloatEpsilon != nil {
-				errorStr += fmt.Sprintf(` with a tolerance of '%g'`, fv.GetFloatEpsilon())
+				errorStr += fmt.Sprintf(errorFloatLtEpsilon[lang], fv.GetFloatEpsilon())
 				compareStr += fmt.Sprint(` - `, fv.GetFloatEpsilon())
 			}
 			compareStr += fmt.Sprint(` < `, fv.GetFloatLt(), `) {`)
 		} else {
-			errorStr = fmt.Sprintf(`be lower than or equal to '%g'`, fv.GetFloatLte())
+			errorStr = fmt.Sprintf(errorFloatLte[lang], fv.GetFloatLte())
 			compareStr += fmt.Sprint(` <= `, fv.GetFloatLte(), `) {`)
 		}
 		p.P(compareStr)
@@ -596,7 +672,7 @@ func getUUIDRegex(version *int32) (string, error) {
 	}
 }
 
-func (p *plugin) generateStringValidator(variableName string, ccTypeName string, fieldName string, fv *validator.FieldValidator) {
+func (p *plugin) generateStringValidator(variableName string, ccTypeName string, fieldName string, fv *validator.FieldValidator, index int) {
 	if fv.Regex != nil || fv.UuidVer != nil {
 		if fv.UuidVer != nil {
 			uuid, err := getUUIDRegex(fv.UuidVer)
@@ -607,9 +683,9 @@ func (p *plugin) generateStringValidator(variableName string, ccTypeName string,
 			}
 		}
 
-		p.P(`if !`, p.regexName(ccTypeName, fieldName), `.MatchString(`, variableName, `) {`)
+		p.P(`if !`, p.regexName(ccTypeName, fieldName, index), `.MatchString(`, variableName, `) {`)
 		p.In()
-		errorStr := "be a string conforming to regex " + strconv.Quote(fv.GetRegex())
+		errorStr := errorRegex[lang] + strconv.Quote(fv.GetRegex())
 		p.generateErrorString(variableName, fieldName, errorStr, fv)
 		p.Out()
 		p.P(`}`)
@@ -617,46 +693,64 @@ func (p *plugin) generateStringValidator(variableName string, ccTypeName string,
 	if fv.StringNotEmpty != nil && fv.GetStringNotEmpty() {
 		p.P(`if `, variableName, ` == "" {`)
 		p.In()
-		errorStr := "not be an empty string"
-		p.generateErrorString(variableName, fieldName, errorStr, fv)
+		errorStr := errorStringNotEmpty[lang]
+		p.generateErrorStringEmpty(variableName, fieldName, errorStr, fv)
+		p.Out()
+		p.P(`}`)
+	}
+	if fv.TrimmedStringNotEmpty != nil && fv.GetTrimmedStringNotEmpty() {
+		p.P(`if `, p.stringsPkg.Use(), `.TrimSpace(`, variableName, `) == "" {`)
+		p.In()
+		errorStr := errorTrimmedStringNotEmpty[lang]
+		p.generateErrorStringEmpty(variableName, fieldName, errorStr, fv)
 		p.Out()
 		p.P(`}`)
 	}
 	p.generateLengthValidator(variableName, ccTypeName, fieldName, fv)
 }
 
-func (p *plugin) generateRepeatedCountValidator(variableName string, ccTypeName string, fieldName string, fv *validator.FieldValidator) {
-	if fv == nil {
+func (p *plugin) generateRepeatedCountValidator(variableName string, ccTypeName string, fieldName string, validators []*validator.FieldValidator) {
+	if len(validators) == 0 {
 		return
 	}
-	if fv.RepeatedCountMin != nil {
-		compareStr := fmt.Sprint(`if len(`, variableName, `) < `, fv.GetRepeatedCountMin(), ` {`)
-		p.P(compareStr)
-		p.In()
-		errorStr := fmt.Sprint(`contain at least `, fv.GetRepeatedCountMin(), ` elements`)
-		p.generateErrorString(variableName, fieldName, errorStr, fv)
-		p.Out()
-		p.P(`}`)
-	}
-	if fv.RepeatedCountMax != nil {
-		compareStr := fmt.Sprint(`if len(`, variableName, `) > `, fv.GetRepeatedCountMax(), ` {`)
-		p.P(compareStr)
-		p.In()
-		errorStr := fmt.Sprint(`contain at most `, fv.GetRepeatedCountMax(), ` elements`)
-		p.generateErrorString(variableName, fieldName, errorStr, fv)
-		p.Out()
-		p.P(`}`)
+	for _, fv := range validators {
+		if fv.RepeatedCountMin != nil {
+			compareStr := fmt.Sprint(`if len(`, variableName, `) < `, fv.GetRepeatedCountMin(), ` {`)
+			p.P(compareStr)
+			p.In()
+			errorStr := fmt.Sprintf(errorRepeatedCountMin[lang], fv.GetRepeatedCountMin())
+			p.generateErrorString(variableName, fieldName, errorStr, fv)
+			p.Out()
+			p.P(`}`)
+		}
+		if fv.RepeatedCountMax != nil {
+			compareStr := fmt.Sprint(`if len(`, variableName, `) > `, fv.GetRepeatedCountMax(), ` {`)
+			p.P(compareStr)
+			p.In()
+			errorStr := fmt.Sprintf(errorRepeatedCountMax[lang], fv.GetRepeatedCountMax())
+			p.generateErrorString(variableName, fieldName, errorStr, fv)
+			p.Out()
+			p.P(`}`)
+		}
 	}
 }
 
 func (p *plugin) generateErrorString(variableName string, fieldName string, specificError string, fv *validator.FieldValidator) {
 	if fv.GetHumanError() == "" {
-		p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{Field: "`, fieldName, `",`, "Description: fmt.Sprintf(` value '%v' must ", specificError, "`, ", variableName, ")}")
-		p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
+		p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{Field: "`, fieldName, `",`, "Description: fmt.Sprintf(`", errorString[lang], specificError, "`, ", variableName, ")}")
 	} else {
 		p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{Field: "`, fieldName, `",`, "Description: `", fv.GetHumanError(), "`}")
-		p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
 	}
+	p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
+}
+
+func (p *plugin) generateErrorStringEmpty(variableName string, fieldName string, specificError string, fv *validator.FieldValidator) {
+	if fv.GetHumanError() == "" {
+		p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{Field: "`, fieldName, `",`, "Description: `", specificError, "`}")
+	} else {
+		p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{Field: "`, fieldName, `",`, "Description: `", fv.GetHumanError(), "`}")
+	}
+	p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
 }
 
 func (p *plugin) fieldIsProto3Map(file *generator.FileDescriptor, message *generator.Descriptor, field *descriptor.FieldDescriptorProto) bool {
@@ -697,37 +791,43 @@ func (p *plugin) fieldIsProto3Map(file *generator.FileDescriptor, message *gener
 	return msg.GetOptions().GetMapEntry()
 }
 
-func (p *plugin) validatorWithMessageExists(fv *validator.FieldValidator) bool {
-	return fv != nil && fv.MsgExists != nil && *(fv.MsgExists)
-}
-
-func (p *plugin) validatorWithNonRepeatedConstraint(fv *validator.FieldValidator) bool {
-	if fv == nil {
-		return false
-	}
-
-	// Need to use reflection in order to be future-proof for new types of constraints.
-	v := reflect.ValueOf(*fv)
-	for i := 0; i < v.NumField(); i++ {
-		fieldName := v.Type().Field(i).Name
-
-		// All known validators will have a pointer type and we should skip any fields
-		// that are not pointers (i.e unknown fields, etc) as well as 'nil' pointers that
-		// don't lead to anything.
-		if v.Type().Field(i).Type.Kind() != reflect.Ptr || v.Field(i).IsNil() {
-			continue
-		}
-
-		// Identify non-repeated constraints based on their name.
-		if fieldName != "RepeatedCountMin" && fieldName != "RepeatedCountMax" {
+func (p *plugin) validatorWithMessageExists(validators []*validator.FieldValidator) bool {
+	for _, fv := range validators {
+		if fv != nil && fv.MsgExists != nil && *(fv.MsgExists) {
 			return true
 		}
 	}
 	return false
 }
 
-func (p *plugin) regexName(ccTypeName string, fieldName string) string {
-	return "_regex_" + ccTypeName + "_" + fieldName
+func (p *plugin) validatorWithNonRepeatedConstraint(validators []*validator.FieldValidator) bool {
+	if len(validators) == 0 {
+		return false
+	}
+	for _, fv := range validators {
+		// Need to use reflection in order to be future-proof for new types of constraints.
+		v := reflect.ValueOf(*fv)
+		for i := 0; i < v.NumField(); i++ {
+			fieldName := v.Type().Field(i).Name
+
+			// All known validators will have a pointer type and we should skip any fields
+			// that are not pointers (i.e unknown fields, etc) as well as 'nil' pointers that
+			// don't lead to anything.
+			if v.Type().Field(i).Type.Kind() != reflect.Ptr || v.Field(i).IsNil() {
+				continue
+			}
+
+			// Identify non-repeated constraints based on their name.
+			if fieldName != "RepeatedCountMin" && fieldName != "RepeatedCountMax" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (p *plugin) regexName(ccTypeName string, fieldName string, index int) string {
+	return "_regex_" + ccTypeName + "_" + fieldName + "_" + fmt.Sprintf("%02d", index)
 }
 
 func fieldValidatorExists(message *generator.Descriptor) bool {
