@@ -119,3 +119,8 @@ var errorOneofValidator = map[string]string{
 	LangPtBr:    "um dos campos deve ser definido",
 	LangDefault: "one of the fields must be set",
 }
+
+var errorDecimalPlacesLte = map[string]string{
+	LangPtBr:    `ter um número de casas decimais menor ou igual que '%d'`,
+	LangDefault: `have a number of decimal places less or equal than '%d'`,
+}

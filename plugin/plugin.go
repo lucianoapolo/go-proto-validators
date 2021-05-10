@@ -281,7 +281,7 @@ func (p *plugin) generateProto2Message(file *generator.FileDescriptor, message *
 				} else if field.IsEnum() {
 					p.generateEnumValidator(field, variableName, ccTypeName, fieldName, validator)
 				} else if p.isSupportedFloat(field) {
-					p.generateFloatValidator(variableName, ccTypeName, fieldName, validator)
+					p.generateFloatValidator(variableName, ccTypeName, fieldName, validator, i)
 				} else if field.IsBytes() {
 					p.generateLengthValidator(variableName, ccTypeName, fieldName, validator)
 				}
@@ -401,7 +401,7 @@ func (p *plugin) generateProto3Message(file *generator.FileDescriptor, message *
 				} else if field.IsEnum() {
 					p.generateEnumValidator(field, variableName, ccTypeName, fieldName, validator)
 				} else if p.isSupportedFloat(field) {
-					p.generateFloatValidator(variableName, ccTypeName, fieldName, validator)
+					p.generateFloatValidator(variableName, ccTypeName, fieldName, validator, i)
 				} else if field.IsBytes() {
 					p.generateLengthValidator(variableName, ccTypeName, fieldName, validator)
 				}
@@ -414,13 +414,6 @@ func (p *plugin) generateProto3Message(file *generator.FileDescriptor, message *
 							p.In()
 							errorStr := errorMsgExists[lang]
 							p.generateErrorStringEmpty(variableName, fieldName, errorStr, validator)
-							//if validator.GetHumanError() == "" {
-							//	p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{Field: "`, fieldName, `", Description: "message must exist"}`)
-							//	p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
-							//} else {
-							//	p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{Field: "`, fieldName, `",`, "Description: `", validator.GetHumanError(), "`}")
-							//	p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
-							//}
 							p.Out()
 							p.P(`}`)
 						} else if repeated {
@@ -437,13 +430,6 @@ func (p *plugin) generateProto3Message(file *generator.FileDescriptor, message *
 							p.In()
 							errorStr := fmt.Sprintf(errorMsgExistsIfAnotherNot[lang], anotherFiledName)
 							p.generateErrorStringEmpty(variableName, fieldName, errorStr, validator)
-							//if validator.GetHumanError() == "" {
-							//	p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{Field: "`, fieldName, `", Description: "`, fmt.Sprintf(errorMsgExistsIfAnotherNot[lang], anotherFiledName), `"}`)
-							//p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{Field: "`, fieldName, `", Description: "message must exist if message `, anotherFiledName, ` is not exists"}`)
-							//} else {
-							//	p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{Field: "`, fieldName, `",`, "Description: `", validator.GetHumanError(), "`}")
-							//}
-							p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
 							p.Out()
 							p.P(`}`)
 						} else if repeated {
@@ -462,7 +448,16 @@ func (p *plugin) generateProto3Message(file *generator.FileDescriptor, message *
 				}
 				p.P(`if fieldsViolationsChild := `, p.validatorPkg.Use(), `.CallValidatorIfExists(`, variableName, `); fieldsViolationsChild != nil {`)
 				p.In()
-				p.P(`fieldsViolations = append(fieldsViolations, fieldsViolationsChild...)`)
+				p.P(`if len(fieldsViolationsChild) > 0 {`)
+				p.In()
+				p.P(`for _, fv := range fieldsViolationsChild {`)
+				p.In()
+				p.P(`fieldViolation := &google_golang_org_genproto_googleapis_rpc_errdetails.BadRequest_FieldViolation{Field: "`, fieldName, `." + fv.Field, Description: fv.Description}`)
+				p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
+				p.Out()
+				p.P(`}`)
+				p.Out()
+				p.P(`}`)
 				p.Out()
 				p.P(`}`)
 				if nullable {
@@ -577,7 +572,7 @@ func (p *plugin) generateLengthValidator(variableName string, ccTypeName string,
 	}
 }
 
-func (p *plugin) generateFloatValidator(variableName string, ccTypeName string, fieldName string, fv *validator.FieldValidator) {
+func (p *plugin) generateFloatValidator(variableName string, ccTypeName string, fieldName string, fv *validator.FieldValidator, index int) {
 	upperIsStrict := true
 	lowerIsStrict := true
 
@@ -651,6 +646,17 @@ func (p *plugin) generateFloatValidator(variableName string, ccTypeName string, 
 		}
 		p.P(compareStr)
 		p.In()
+		p.generateErrorString(variableName, fieldName, errorStr, fv)
+		p.Out()
+		p.P(`}`)
+	}
+
+	if fv.DecimalPlacesLte != nil {
+		floatSlice := fieldName + "_" + fmt.Sprintf("%02d", index)
+		p.P(floatSlice, ` := `, p.stringsPkg.Use(), `.Split(`, p.fmtPkg.Use(), `.Sprintf("%v", `, variableName, `), ".")`)
+		p.P(`if len(`, floatSlice, `) > 1 && !(len(`, floatSlice, `[1]) <= `, fv.DecimalPlacesLte, `) {`)
+		p.In()
+		errorStr := fmt.Sprintf(errorDecimalPlacesLte[lang], fv.GetDecimalPlacesLte())
 		p.generateErrorString(variableName, fieldName, errorStr, fv)
 		p.Out()
 		p.P(`}`)

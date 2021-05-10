@@ -79,6 +79,8 @@ message FieldValidator {
   optional int64 int_gte = 21;
   // Field value of integer strictly smaller or equal than this value.
   optional int64 int_lte = 22;
+  // Number of decimal places from floating-point should be smaller or equal.
+  optional int32 decimal_places_lte = 23;
 }
 
 message OneofValidator {
