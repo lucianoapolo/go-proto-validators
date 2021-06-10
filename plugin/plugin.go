@@ -347,7 +347,7 @@ func (p *plugin) generateProto3Message(file *generator.FileDescriptor, message *
 				oneOfName := generator.CamelCase(oneof.GetName())
 				p.P(`if this.Get` + oneOfName + `() == nil {`)
 				p.In()
-				p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{Field: "`, oneOfName, `", Description: `, errorOneofValidator[lang], `}`)
+				p.P(`fieldViolation := &`, p.errdetailsPkg.Use(), `.BadRequest_FieldViolation{Field: "`, oneOfName, `", Description: "`, errorOneofValidator[lang], `"}`)
 				p.P(`fieldsViolations = append(fieldsViolations, fieldViolation)`)
 				p.Out()
 				p.P(`}`)
@@ -369,7 +369,7 @@ func (p *plugin) generateProto3Message(file *generator.FileDescriptor, message *
 				continue
 			}
 			if isOneOf {
-				p.In()
+				//p.In()
 				oneOfName := p.GetFieldName(message, field)
 				oneOfType := p.OneOfTypeName(message, field)
 				// if x, ok := m.GetType().(*OneOfMessage3_OneInt); ok {
